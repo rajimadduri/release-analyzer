@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from anthropic import Anthropic
 import json
 import re
+import httpx
+import base64
 
 load_dotenv()
 
@@ -24,6 +26,10 @@ def _env_flag(name: str, default: bool = False) -> bool:
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "").strip()
 DEMO_MODE = _env_flag("DEMO_MODE") or CLAUDE_API_KEY.lower() in DEMO_KEY_VALUES
 DEMO_FALLBACK = _env_flag("DEMO_FALLBACK")
+
+JIRA_EMAIL = os.getenv("JIRA_EMAIL", "").strip()
+JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "").strip()
+JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "").strip()
 
 if DEMO_MODE or not CLAUDE_API_KEY:
     client = None
@@ -58,6 +64,11 @@ class RiskAnalysis(BaseModel):
     recommendations: list[str]
     confidence: float
 
+class JiraReleaseRequest(BaseModel):
+    version_name: str
+    project_key: str = "RAD"
+    test_coverage: float = 80.0
+    deployment_window: str = "standard"
 
 class RunbookGenerationRequest(BaseModel):
     release_notes: str
@@ -175,6 +186,38 @@ def _require_client() -> Anthropic:
         )
     return client
 
+async def fetch_jira_issues(project_key: str, version_name: str) -> str:
+    if not JIRA_EMAIL or not JIRA_API_TOKEN:
+        raise HTTPException(status_code=503, detail="Jira credentials not configured.")
+    
+    token = base64.b64encode(f"{JIRA_EMAIL}:{JIRA_API_TOKEN}".encode()).decode()
+    headers = {
+        "Authorization": f"Basic {token}",
+        "Accept": "application/json"
+    }
+    jql = f"project={project_key} AND fixVersion='{version_name}'"
+    url = f"{JIRA_BASE_URL}/rest/api/3/search/jql?jql={jql}&fields=summary,issuetype,labels,fixVersions"
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers)
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Jira API error: {response.text}")
+        data = response.json()
+    
+    issues = data.get("issues", [])
+    if not issues:
+        raise HTTPException(status_code=404, detail=f"No issues found for version '{version_name}'")
+    
+    issues_text = ""
+    for issue in issues:
+        fields = issue.get("fields", {})
+        key = issue.get("key", "")
+        summary = fields.get("summary", "")
+        issue_type = fields.get("issuetype", {}).get("name", "Task")
+        labels = ", ".join(fields.get("labels", [])) or "none"
+        issues_text += f"- [{issue_type}] {key}: {summary} (labels: {labels})\n"
+    
+    return issues_text
 
 def analyze_release_with_claude(
     release_notes: str,
@@ -380,6 +423,58 @@ async def generate_runbook(request: RunbookGenerationRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Runbook generation failed: {str(e)}")
 
+@app.post("/api/analysis/analyze-jira")
+async def analyze_jira_release(request: JiraReleaseRequest):
+    try:
+        issues_text = await fetch_jira_issues(request.project_key, request.version_name)
+        
+        prompt = f"""Here are the Jira issues for version '{request.version_name}':
+
+{issues_text}
+
+Test Coverage: {request.test_coverage}%
+
+First summarize these issues as release notes, then assess the release risk.
+
+Return ONLY valid JSON:
+{{
+  "release_notes_summary": "<2-3 sentence summary of what this release contains>",
+  "risk_score": <number 0.0-5.0>,
+  "risk_factors": [<list of specific risk factors>],
+  "recommendations": [<list of mitigation actions>],
+  "confidence": <number 0.0-1.0>
+}}"""
+
+        if DEMO_MODE:
+            analysis = demo_risk_analysis(issues_text, request.test_coverage, len(issues_text.split("\n")))
+            return {"success": True, "data": analysis.model_dump(), "issues_fetched": issues_text, "demo_mode": True}
+
+        response = _require_client().messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1000,
+            system="You are an expert release engineer. Analyze Jira issues and assess deployment risk. Respond ONLY with valid JSON.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        response_text = response.content[0].text.strip()
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError:
+            json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group())
+            else:
+                raise ValueError(f"Could not extract JSON from: {response_text}")
+
+        return {"success": True, "data": data, "issues_fetched": issues_text, "demo_mode": False}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Jira analysis failed: {str(e)}")
+        
 
 @app.get("/api/metrics/summary")
 async def get_metrics_summary():

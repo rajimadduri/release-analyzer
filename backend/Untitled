@@ -1,0 +1,1 @@
+async def fetch_jira_issues(project_key: str, version_name: str) -> str:

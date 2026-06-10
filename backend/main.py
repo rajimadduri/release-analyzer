@@ -68,6 +68,7 @@ class JiraReleaseRequest(BaseModel):
     version_name: str
     project_key: str = "RAD"
     test_coverage: float = 80.0
+    dependency_label: str = "dependency"
     deployment_window: str = "standard"
 
 class RunbookGenerationRequest(BaseModel):
@@ -186,7 +187,7 @@ def _require_client() -> Anthropic:
         )
     return client
 
-async def fetch_jira_issues(project_key: str, version_name: str) -> str:
+async def fetch_jira_issues(project_key: str, version_name: str, dependency_label: str = "dependency") -> tuple[str, int]:
     if not JIRA_EMAIL or not JIRA_API_TOKEN:
         raise HTTPException(status_code=503, detail="Jira credentials not configured.")
     
@@ -208,6 +209,10 @@ async def fetch_jira_issues(project_key: str, version_name: str) -> str:
     if not issues:
         raise HTTPException(status_code=404, detail=f"No issues found for version '{version_name}'")
     
+    # Auto-count dependency issues from Jira labels
+    dep_count = sum(1 for issue in issues
+        if dependency_label.lower() in [l.lower() for l in issue.get("fields", {}).get("labels", [])])
+    
     issues_text = ""
     for issue in issues:
         fields = issue.get("fields", {})
@@ -217,7 +222,7 @@ async def fetch_jira_issues(project_key: str, version_name: str) -> str:
         labels = ", ".join(fields.get("labels", [])) or "none"
         issues_text += f"- [{issue_type}] {key}: {summary} (labels: {labels})\n"
     
-    return issues_text
+    return issues_text, dep_count
 
 def analyze_release_with_claude(
     release_notes: str,
@@ -426,13 +431,16 @@ async def generate_runbook(request: RunbookGenerationRequest):
 @app.post("/api/analysis/analyze-jira")
 async def analyze_jira_release(request: JiraReleaseRequest):
     try:
-        issues_text = await fetch_jira_issues(request.project_key, request.version_name)
+        issues_text, dep_count = await fetch_jira_issues(
+            request.project_key, request.version_name, request.dependency_label
+        )
         
         prompt = f"""Here are the Jira issues for version '{request.version_name}':
 
 {issues_text}
 
 Test Coverage: {request.test_coverage}%
+Dependencies Changed: {dep_count} (auto-counted from Jira issues labeled '{request.dependency_label}')
 
 First summarize these issues as release notes, then assess the release risk.
 

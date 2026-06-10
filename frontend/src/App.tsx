@@ -328,6 +328,7 @@ function JiraAnalyzer() {
   const [versionName, setVersionName] = useState('');
   const [projectKey, setProjectKey] = useState('RAD');
   const [testCoverage, setTestCoverage] = useState(75);
+  const [dependencyLabel, setDependencyLabel] = useState('dependency');
   const [analysis, setAnalysis] = useState<JiraAnalysis | null>(null);
   const [issuesFetched, setIssuesFetched] = useState('');
   const [loading, setLoading] = useState(false);
@@ -344,6 +345,7 @@ function JiraAnalyzer() {
         version_name: versionName,
         project_key: projectKey,
         test_coverage: testCoverage,
+        dependency_label: dependencyLabel,
       });
 
       if (response.data.success) {
@@ -428,6 +430,21 @@ function JiraAnalyzer() {
               className="w-full px-4 py-3 text-lg border-2 border-gray-200 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
             />
           </div>
+
+          <div>
+            <label className="block mb-3">
+              <span className="text-lg font-semibold text-gray-800">Dependency Label</span>
+              <p className="text-sm text-gray-500 mt-1">Jira label used to tag dependency issues</p>
+            </label>
+            <input
+              type="text"
+              value={dependencyLabel}
+              onChange={(e) => setDependencyLabel(e.target.value)}
+              placeholder="dependency"
+              className="w-full px-4 py-3 text-lg border-2 border-gray-200 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+            />
+          </div>
+
         </div>
 
         <div className="mb-6">
@@ -561,7 +578,8 @@ function JiraAnalyzer() {
               <li><strong>0-1 (Very Safe):</strong> Minimal risk. Deploy with standard procedures.</li>
               <li><strong>1-2 (Safe):</strong> Low risk. Routine deployment process appropriate.</li>
               <li><strong>2-3 (Moderate):</strong> Some risk. Recommend extra monitoring and gradual rollout.</li>
-              <li><strong>3-4 (High Risk):</strong> Significant risk. Consider delaying or adding more testing.</li>
+              <li><strong>3-4 (
+                High Risk):</strong> Significant risk. Consider delaying or adding more testing.</li>
               <li><strong>4-5 (Critical):</strong> Do not ship. Address risk factors before deployment.</li>
             </ul>
           </div>

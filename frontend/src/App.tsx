@@ -553,6 +553,18 @@ function JiraAnalyzer() {
               </div>
             </div>
           </div>
+        
+        
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+            <h3 className="font-semibold text-blue-900 mb-3">How to interpret this score:</h3>
+            <ul className="space-y-2 text-sm text-blue-800">
+              <li><strong>0-1 (Very Safe):</strong> Minimal risk. Deploy with standard procedures.</li>
+              <li><strong>1-2 (Safe):</strong> Low risk. Routine deployment process appropriate.</li>
+              <li><strong>2-3 (Moderate):</strong> Some risk. Recommend extra monitoring and gradual rollout.</li>
+              <li><strong>3-4 (High Risk):</strong> Significant risk. Consider delaying or adding more testing.</li>
+              <li><strong>4-5 (Critical):</strong> Do not ship. Address risk factors before deployment.</li>
+            </ul>
+          </div>
         </div>
       )}
     </div>

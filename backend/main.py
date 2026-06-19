@@ -24,6 +24,7 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "").strip()
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6").strip()
 DEMO_MODE = _env_flag("DEMO_MODE") or CLAUDE_API_KEY.lower() in DEMO_KEY_VALUES
 DEMO_FALLBACK = _env_flag("DEMO_FALLBACK")
 
@@ -263,7 +264,7 @@ Be specific in risk factors and recommendations. Ground them in the actual relea
 
     try:
         response = _require_client().messages.create(
-            model="claude-sonnet-4-20250514",
+            model=CLAUDE_MODEL,
             max_tokens=1000,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
@@ -334,7 +335,7 @@ Be specific. Include actual commands where applicable (e.g., "kubectl rollout st
 
     try:
         response = _require_client().messages.create(
-            model="claude-sonnet-4-20250514",
+            model=CLAUDE_MODEL,
             max_tokens=2000,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
@@ -458,7 +459,7 @@ Return ONLY valid JSON:
             return {"success": True, "data": analysis.model_dump(), "issues_fetched": issues_text, "demo_mode": True}
 
         response = _require_client().messages.create(
-            model="claude-sonnet-4-20250514",
+            model=CLAUDE_MODEL,
             max_tokens=1000,
             system="You are an expert release engineer. Analyze Jira issues and assess deployment risk. Respond ONLY with valid JSON.",
             messages=[{"role": "user", "content": prompt}],

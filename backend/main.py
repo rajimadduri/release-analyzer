@@ -436,23 +436,37 @@ async def analyze_jira_release(request: JiraReleaseRequest):
             request.project_key, request.version_name, request.dependency_label
         )
         
-        prompt = f"""Here are the Jira issues for version '{request.version_name}':
-
-{issues_text}
-
+        prompt = f"""<context>
+You are analyzing a software release for deployment risk assessment. You are an expert release engineer with 22+ years of experience.
+Release Version: {request.version_name}
 Test Coverage: {request.test_coverage}%
-Dependencies Changed: {dep_count} (auto-counted from Jira issues labeled '{request.dependency_label}')
+Dependencies Changed: {dep_count} (auto-counted from issues labeled '{request.dependency_label}')
+</context>
 
-First summarize these issues as release notes, then assess the release risk.
+<jira_issues>
+{issues_text}
+</jira_issues>
 
-Return ONLY valid JSON:
+<task>
+Step 1: Summarize the issues above into a concise release notes summary (2-3 sentences).
+Step 2: Assess overall deployment risk on a scale of 0.0 to 5.0, where 0 is minimal risk and 5 is critical/do-not-ship.
+Step 3: List the specific risk factors driving that score, citing issue keys where relevant.
+Step 4: List concrete, actionable recommendations to mitigate the identified risks.
+Step 5: State your confidence in this assessment from 0.0 to 1.0.
+</task>
+
+<output_format>
+Respond with ONLY a single raw JSON object. Do not include markdown code fences, backticks, explanatory text, or anything before or after the JSON.
+Limit risk_factors to 5 items maximum and recommendations to 5 items maximum, each as a single concise sentence.
+
 {{
-  "release_notes_summary": "<2-3 sentence summary of what this release contains>",
-  "risk_score": <number 0.0-5.0>,
-  "risk_factors": [<list of specific risk factors>],
-  "recommendations": [<list of mitigation actions>],
-  "confidence": <number 0.0-1.0>
-}}"""
+  "release_notes_summary": "string, 2-3 sentences",
+  "risk_score": number between 0.0 and 5.0,
+  "risk_factors": ["string", "string", ...],
+  "recommendations": ["string", "string", ...],
+  "confidence": number between 0.0 and 1.0
+}}
+</output_format>"""
 
         if DEMO_MODE:
             analysis = demo_risk_analysis(issues_text, request.test_coverage, len(issues_text.split("\n")))
@@ -460,7 +474,7 @@ Return ONLY valid JSON:
 
         response = _require_client().messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=1000,
+            max_tokens=2000,
             system="You are an expert release engineer. Analyze Jira issues and assess deployment risk. Respond ONLY with valid JSON.",
             messages=[{"role": "user", "content": prompt}],
         )
